@@ -1,5 +1,5 @@
 import { produce as createNextState, isDraftable } from 'immer'
-import type { Middleware, StoreEnhancer } from 'redux'
+import type { MaybePromise } from './tsHelpers'
 
 export function getTimeMeasureUtils(maxDelay: number, fnName: string) {
   let elapsed = 0
@@ -86,4 +86,8 @@ export class Tuple<Items extends ReadonlyArray<unknown> = []> extends Array<
 
 export function freezeDraftable<T>(val: T) {
   return isDraftable(val) ? createNextState(val, () => {}) : val
+}
+
+export function promiseTry<T>(cb: () => MaybePromise<T>) {
+  return new Promise<T>((r) => r(cb()))
 }

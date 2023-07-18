@@ -80,13 +80,13 @@ export function buildMiddleware<
 
     return (next) => {
       return (action) => {
-        if (!isAction(action)) {
-          return next(action)
-        }
         if (!initialized) {
           initialized = true
           // dispatch before any other action
           mwApi.dispatch(api.internalActions.middlewareRegistered(apiUid))
+        }
+        if (!isAction(action)) {
+          return next(action)
         }
 
         const mwApiWithNext = { ...mwApi, next }

@@ -91,3 +91,10 @@ export function freezeDraftable<T>(val: T) {
 export function promiseTry<T>(cb: () => MaybePromise<T>) {
   return new Promise<T>((r) => r(cb()))
 }
+
+export async function promiseFromEntries<T>(entries: [string, Promise<T>][]) {
+  const awaitedEntries = await Promise.all(
+    entries.map(async ([k, v]) => [k, await v] as const)
+  )
+  return Object.fromEntries(awaitedEntries)
+}

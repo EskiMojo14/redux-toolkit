@@ -9,39 +9,70 @@ import {
   isAction,
   applyMiddleware,
   createSlice,
-  configureStore,
   nanoid,
 } from '@reduxjs/toolkit'
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query'
+import { promiseFromEntries, promiseTry } from '../utils'
 
-const counterSlice = createSlice({
-  name: 'counter',
-  initialState: { value: 0 },
-  reducers: {
-    increment: (state) => void state.value++,
-  },
-})
-
-type PersistState = {
+interface PersistState {
   hydrated: boolean
   registered: boolean | 'conflict'
 }
 
-type PersistorOptions<ReducerPath extends string = 'persistor'> = {
+interface PersistorOptions<ReducerPath extends string = 'persistor'> {
   reducerPath?: ReducerPath
 }
 
-type PersistConfig = {
-  storage: Storage
+interface PersistStorage<Serialized> {
+  getItem(key: string): Promise<Serialized | null>
+  setItem(key: string, value: Serialized): Promise<void>
+  removeItem(key: string): Promise<void>
 }
 
-type PersistRegistryEntry = {
-  config: PersistConfig
+/* eslint-disable no-restricted-globals */
+export const localStorage: PersistStorage<string> = {
+  getItem(key) {
+    return promiseTry(() => self.localStorage.getItem(key))
+  },
+  setItem(key, value) {
+    return promiseTry(() => self.localStorage.setItem(key, value))
+  },
+  removeItem(key) {
+    return promiseTry(() => self.localStorage.removeItem(key))
+  },
+}
+/* eslint-enable no-restricted-globals */
+
+interface PersistConfig<State, Serialized> {
+  storage: PersistStorage<Serialized>
+  serialize?: ((state: State) => Serialized) | false
+  deserialize?: ((serialized: Serialized) => State) | false
 }
 
-type PersistDispatch<ReducerPath extends string> = {}
+interface PersistRegistryEntry {
+  config: PersistConfig<any, any>
+}
 
-const createPersistor = <ReducerPath extends string = 'persistor'>({
+interface PersistDispatch<ReducerPath extends string> {
+  (action: Action<`${ReducerPath}/hydrate`>): Promise<void>
+}
+
+async function getStoredState(
+  reducerPath: string,
+  entry: PersistRegistryEntry
+) {
+  let {
+    config: { storage, deserialize },
+  } = entry
+  if (typeof deserialize === 'undefined') {
+    deserialize = JSON.parse
+  }
+
+  const stored = storage.getItem(reducerPath)
+
+  return deserialize === false ? stored : deserialize(stored)
+}
+
+export const createPersistor = <ReducerPath extends string = 'persistor'>({
   reducerPath = 'persistor' as ReducerPath,
 }: PersistorOptions<ReducerPath> = {}) => {
   const persistUid = nanoid()
@@ -59,8 +90,10 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
             ? 'conflict'
             : true
       },
-      init: () => {},
-      hydrate: (state, action: PayloadAction<Record<string, any>>) => {
+      hydrate: (
+        state,
+        action: PayloadAction<Record<string, any> | undefined>
+      ) => {
         state.hydrated = true
       },
       reset: () => initialState,
@@ -71,7 +104,7 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
     },
   })
 
-  const { middlewareRegistered, init, hydrate, reset } = slice.actions
+  const { middlewareRegistered, hydrate, reset } = slice.actions
 
   const { selectHydrated, selectRegistered } = slice.selectors
 
@@ -88,14 +121,22 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
       if (isAction(action)) {
         if (reset.match(action)) {
           dispatch(middlewareRegistered(persistUid))
+        } else if (hydrate.match(action)) {
+          return promiseFromEntries(
+            Object.entries(internalRegistry).map(([reducerPath, entry]) => {
+              return [reducerPath, getStoredState(reducerPath, entry)]
+            })
+          ).then((payload) => next(hydrate(payload)))
         } else if (
           typeof process !== 'undefined' &&
-          process.env.NODE_ENV === 'development' &&
-          middlewareRegistered.match(action) &&
-          action.payload === persistUid &&
-          selectRegistered(getState()) === 'conflict'
+          process.env.NODE_ENV === 'development'
         ) {
-          console.error('whoops')
+          if (
+            middlewareRegistered.match(action) &&
+            action.payload === persistUid &&
+            selectRegistered(getState()) === 'conflict'
+          )
+            console.error('whoops')
         }
       }
       const result = next(action)
@@ -109,12 +150,12 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
       const createStore = applyMiddleware(middleware)(next)
       const store = createStore(reducer, preloadedState)
 
-      store.dispatch(init() as any)
+      store.dispatch(hydrate())
 
       return store
     }
 
-  const persistSlice = <S, A extends Action>(
+  const persistSlice = <S, A extends Action, SS>(
     {
       reducerPath,
       reducer,
@@ -122,13 +163,13 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
       reducerPath: string
       reducer: Reducer<S, A>
     },
-    config: PersistConfig
+    config: PersistConfig<S, SS>
   ): Reducer<S, A> => {
     internalRegistry[reducerPath] = { config }
 
     return (state, action) => {
       if (hydrate.match(action)) {
-        const possibleState = action.payload[reducerPath]
+        const possibleState = action.payload && action.payload[reducerPath]
         return reducer(possibleState || state, action)
       }
       return reducer(state, action)
@@ -143,33 +184,3 @@ const createPersistor = <ReducerPath extends string = 'persistor'>({
     enhancer,
   }
 }
-
-const persistor = createPersistor()
-
-const persistedCounter = persistor.persistSlice(counterSlice, {
-  storage: localStorage,
-})
-
-const api = createApi({
-  baseQuery: fetchBaseQuery(),
-  endpoints: () => ({}),
-  extractRehydrationInfo(action, { reducerPath }) {
-    if (persistor.actions.hydrate.match(action)) {
-      return action.payload[reducerPath]
-    }
-  },
-})
-
-const store = configureStore({
-  reducer: {
-    [persistor.reducerPath]: persistor.reducer,
-    [api.reducerPath]: api.reducer,
-    [counterSlice.reducerPath]: persistedCounter,
-  },
-  middleware: (gDM) => gDM().concat(api.middleware),
-  enhancers: (gDE) => gDE().concat(persistor.enhancer),
-})
-
-store.dispatch(counterSlice.actions.increment())
-
-store.dispatch(persistor.actions.middlewareRegistered(''))

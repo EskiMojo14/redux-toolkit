@@ -32,13 +32,13 @@ interface PersistStorage<Serialized> {
 /* eslint-disable no-restricted-globals */
 export const localStorage: PersistStorage<string> = {
   getItem(key) {
-    return promiseTry(() => self.localStorage.getItem(key))
+    return promiseTry(() => globalThis.localStorage.getItem(key))
   },
   setItem(key, value) {
-    return promiseTry(() => self.localStorage.setItem(key, value))
+    return promiseTry(() => globalThis.localStorage.setItem(key, value))
   },
   removeItem(key) {
-    return promiseTry(() => self.localStorage.removeItem(key))
+    return promiseTry(() => globalThis.localStorage.removeItem(key))
   },
 }
 /* eslint-enable no-restricted-globals */
@@ -57,10 +57,7 @@ interface PersistDispatch<ReducerPath extends string> {
   (action: Action<`${ReducerPath}/hydrate`>): Promise<void>
 }
 
-async function getStoredState(
-  reducerPath: string,
-  entry: PersistRegistryEntry
-) {
+async function getStoredState(name: string, entry: PersistRegistryEntry) {
   let {
     config: { storage, deserialize },
   } = entry
@@ -68,7 +65,7 @@ async function getStoredState(
     deserialize = JSON.parse
   }
 
-  const stored = storage.getItem(reducerPath)
+  const stored = storage.getItem(name)
 
   return deserialize === false ? stored : deserialize(stored)
 }
@@ -92,14 +89,11 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
             : true
       },
       hydrate: {
-        prepare: (reducerPath: string, state: any) => ({
-          payload: { reducerPath, state },
+        prepare: (name: string, state: any) => ({
+          payload: { name, state },
           meta: { [SHOULD_AUTOBATCH]: true },
         }),
-        reducer(
-          state,
-          action: PayloadAction<{ reducerPath: string; state: any }>
-        ) {
+        reducer(state, action: PayloadAction<{ name: string; state: any }>) {
           state.hydrated = true
         },
       },
@@ -131,16 +125,14 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
           dispatch(middlewareRegistered(persistUid))
         } else if (hydrate.match(action)) {
           return Promise.all(
-            Object.entries(internalRegistry).map(
-              async ([reducerPath, entry]) => {
-                try {
-                  const state = await getStoredState(reducerPath, entry)
-                  dispatch(hydrate(reducerPath, state))
-                } catch {
-                  // eslint-disable-next-line no-empty
-                }
+            Object.entries(internalRegistry).map(async ([name, entry]) => {
+              try {
+                const state = await getStoredState(name, entry)
+                dispatch(hydrate(name, state))
+              } catch {
+                // eslint-disable-next-line no-empty
               }
-            )
+            })
           )
         } else if (
           typeof process !== 'undefined' &&
@@ -172,18 +164,18 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
 
   const persistSlice = <S, A extends Action, SS>(
     {
-      reducerPath,
+      name,
       reducer,
     }: {
-      reducerPath: string
+      name: string
       reducer: Reducer<S, A>
     },
     config: PersistConfig<S, SS>
   ): Reducer<S, A> => {
-    internalRegistry[reducerPath] = { config }
+    internalRegistry[name] = { config }
 
     return (state, action) => {
-      if (hydrate.match(action) && action.payload.reducerPath === reducerPath) {
+      if (hydrate.match(action) && action.payload.name === name) {
         const possibleState = action.payload.state
         return reducer(possibleState || state, action)
       }

@@ -199,7 +199,9 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       } else {
         nextState = reducer(state, action)
       }
-      storeState(name, nextState, internalRegistry[name])
+      if (state !== nextState) {
+        storeState(name, nextState, internalRegistry[name])
+      }
       return nextState
     }
   }
@@ -207,7 +209,6 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
   return {
     reducerPath,
     reducer: slice.reducer,
-    actions: slice.actions,
     persistSlice,
     enhancer,
   }

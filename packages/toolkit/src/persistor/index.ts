@@ -11,6 +11,8 @@ import {
   createSlice,
   nanoid,
   SHOULD_AUTOBATCH,
+  combineSlices,
+  configureStore,
 } from '@reduxjs/toolkit'
 import { promiseTry } from '../utils'
 
@@ -48,6 +50,7 @@ interface PersistConfig<State, Serialized> {
   storage: PersistStorage<Serialized>
   serialize?: ((state: State) => Serialized) | false
   deserialize?: ((serialized: Serialized) => State) | false
+  merge?: (current: State | undefined, hydrated: State) => State
 }
 
 interface PersistRegistryEntry {
@@ -175,13 +178,9 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       const result = next(action)
       const stateAfter = getState()
       if (stateBefore !== stateAfter) {
-        Object.entries(internalRegistry).forEach(async ([name, entry]) => {
-          try {
-            await storeState(name, stateAfter, entry)
-          } catch (e) {
-            onError?.(e)
-          }
-        })
+        Object.entries(internalRegistry).forEach(([name, entry]) =>
+          storeState(name, stateAfter, entry).catch(onError)
+        )
       }
       return result
     }
@@ -197,28 +196,33 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       return store
     }
 
-  const persistSlice = <S, A extends Action, SS>(
-    {
-      name,
-      reducer,
-    }: {
-      name: string
-      reducer: Reducer<S, A>
-    },
-    config: PersistConfig<S, SS>
-  ): Reducer<S, A> => {
+  const persistSlice = <
+    Slice extends { name: string; reducer: Reducer<any, any> },
+    SS
+  >(
+    { reducer, name, ...slice }: Slice,
+    config: PersistConfig<
+      Slice extends { reducer: Reducer<infer State, any> } ? State : never,
+      SS
+    >
+  ): Slice => {
+    const { merge = (_, hydrated) => hydrated } = config
     internalRegistry[name] = { config }
 
-    return (state, action) => {
-      let nextState = state
-      if (hydrate.match(action) && action.payload.name === name) {
-        const possibleState = action.payload.state
-        nextState = reducer(possibleState || state, action)
-      } else {
-        nextState = reducer(state, action)
-      }
-      return nextState
-    }
+    return {
+      ...slice,
+      name,
+      reducer(state, action) {
+        let nextState = state
+        if (hydrate.match(action) && action.payload.name === name) {
+          const hydrated = action.payload.state
+          nextState = reducer(merge(state, hydrated), action)
+        } else {
+          nextState = reducer(state, action)
+        }
+        return nextState
+      },
+    } as Slice
   }
 
   return {

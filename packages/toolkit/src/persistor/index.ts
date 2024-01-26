@@ -21,6 +21,7 @@ interface PersistState {
 
 interface PersistorOptions<ReducerPath extends string = 'persistor'> {
   reducerPath?: ReducerPath
+  onError?: (error: unknown) => void
 }
 
 interface PersistStorage<Serialized> {
@@ -89,6 +90,7 @@ async function storeState(
 
 export const createPersistor = <ReducerPath extends string = 'persistor'>({
   reducerPath = 'persistor' as ReducerPath,
+  onError,
 }: PersistorOptions<ReducerPath> = {}) => {
   const persistUid = nanoid()
 
@@ -114,7 +116,6 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
           state.hydrated = true
         },
       },
-      init() {},
       reset: () => initialState,
     },
     selectors: {
@@ -123,7 +124,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     },
   })
 
-  const { middlewareRegistered, hydrate, reset, init } = slice.actions
+  const { middlewareRegistered, hydrate, reset } = slice.actions
 
   const { selectHydrated, selectRegistered } = slice.selectors
 
@@ -137,6 +138,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
         initialized = true
         dispatch(middlewareRegistered(persistUid))
       }
+      const stateBefore = getState()
       if (isAction(action)) {
         if (reset.match(action)) {
           dispatch(middlewareRegistered(persistUid))
@@ -146,8 +148,8 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
               try {
                 const state = await getStoredState(name, entry)
                 dispatch(hydrate(name, state))
-              } catch {
-                // eslint-disable-next-line no-empty
+              } catch (e) {
+                onError?.(e)
               }
             })
           )
@@ -164,7 +166,16 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
         }
       }
       const result = next(action)
-      const newState = getState()
+      const stateAfter = getState()
+      if (stateBefore !== stateAfter) {
+        Object.entries(internalRegistry).forEach(async ([name, entry]) => {
+          try {
+            await storeState(name, stateAfter, entry)
+          } catch (e) {
+            onError?.(e)
+          }
+        })
+      }
       return result
     }
   }
@@ -198,9 +209,6 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
         nextState = reducer(possibleState || state, action)
       } else {
         nextState = reducer(state, action)
-      }
-      if (state !== nextState) {
-        storeState(name, nextState, internalRegistry[name])
       }
       return nextState
     }

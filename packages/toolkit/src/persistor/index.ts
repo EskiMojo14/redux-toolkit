@@ -51,7 +51,7 @@ interface PersistConfig<State, Serialized> {
   deserialize?: ((serialized: Serialized) => State) | false
   merge?: (
     inboundState: State,
-    state: State,
+    state: State | undefined,
     reducedState: State,
     config: PersistConfig<State, Serialized>
   ) => State
@@ -244,30 +244,20 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       return store
     }
 
-  const persistSlice = <
-    Slice extends { name: string; reducer: Reducer<any, any> },
-    SS
-  >(
-    { reducer, name, ...slice }: Slice,
-    config: PersistConfig<
-      Slice extends { reducer: Reducer<infer State, any> } ? State : never,
-      SS
-    >
-  ): Slice => {
+  const persistSlice = <S, A extends Action, SS>(
+    { reducer, name }: { name: string; reducer: Reducer<S, A> },
+    config: PersistConfig<S, SS>
+  ): Reducer<S, A> => {
     const { merge = hardMerge } = config
     internalRegistry[name] = { config }
 
-    return {
-      ...slice,
-      name,
-      reducer(state, action) {
-        const reducedState = reducer(state, action)
-        if (hydrate.match(action) && action.payload.name === name) {
-          return merge(action.payload.state, state, reducedState, config)
-        }
-        return reducedState
-      },
-    } as Slice
+    return function wrapped(state, action) {
+      const reducedState = reducer(state, action)
+      if (hydrate.match(action) && action.payload.name === name) {
+        return merge(action.payload.state, state, reducedState, config)
+      }
+      return reducedState
+    }
   }
 
   return {

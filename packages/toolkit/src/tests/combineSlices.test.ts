@@ -1,10 +1,10 @@
-import { createReducer } from '../createReducer'
-import { createAction } from '../createAction'
-import { createSlice } from '../createSlice'
 import type { WithSlice } from '../combineSlices'
 import { combineSlices } from '../combineSlices'
-import { expectType } from './helpers'
+import { createAction } from '../createAction'
+import { createReducer } from '../createReducer'
+import { createSlice } from '../createSlice'
 import type { CombinedState } from '../query/core/apiState'
+import { expectType } from './utils/typeTestHelpers'
 
 const dummyAction = createAction<void>('dummy')
 
@@ -33,6 +33,7 @@ const api = {
       subscriptions: {},
       config: {
         reducerPath: 'api',
+        invalidationBehavior: 'delayed',
         online: false,
         focused: false,
         keepUnusedDataFor: 60,
@@ -64,6 +65,13 @@ describe('combineSlices', () => {
     })
   })
   describe('injects', () => {
+    beforeEach(() => {
+
+      vi.stubEnv('NODE_ENV', 'development')
+
+      return vi.unstubAllEnvs
+    })
+
     it('injects slice', () => {
       const combinedReducer =
         combineSlices(stringSlice).withLazyLoadedSlices<

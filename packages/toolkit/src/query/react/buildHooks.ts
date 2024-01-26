@@ -1,10 +1,36 @@
 import type {
-  UnknownAction,
   Selector,
   ThunkAction,
   ThunkDispatch,
+  UnknownAction,
 } from '@reduxjs/toolkit'
-import { createSelector } from '@reduxjs/toolkit'
+import type {
+  Api,
+  ApiContext,
+  ApiEndpointMutation,
+  ApiEndpointQuery,
+  CoreModule,
+  EndpointDefinitions,
+  MutationActionCreatorResult,
+  MutationDefinition,
+  MutationResultSelectorResult,
+  PrefetchOptions,
+  QueryActionCreatorResult,
+  QueryArgFrom,
+  QueryDefinition,
+  QueryKeys,
+  QueryResultSelectorResult,
+  QuerySubState,
+  ResultTypeFrom,
+  RootState,
+  SerializeQueryArgs,
+  SkipToken,
+  SubscriptionOptions,
+  TSHelpersId,
+  TSHelpersNoInfer,
+  TSHelpersOverride,
+} from '@reduxjs/toolkit/query'
+import { QueryStatus, skipToken } from '@reduxjs/toolkit/query'
 import type { DependencyList } from 'react'
 import {
   useCallback,
@@ -15,50 +41,16 @@ import {
   useRef,
   useState,
 } from 'react'
-import { QueryStatus, skipToken } from '@reduxjs/toolkit/query'
-import type {
-  QuerySubState,
-  SubscriptionOptions,
-  QueryKeys,
-  RootState,
-} from '@reduxjs/toolkit/dist/query/core/apiState'
-import type {
-  EndpointDefinitions,
-  MutationDefinition,
-  QueryDefinition,
-  QueryArgFrom,
-  ResultTypeFrom,
-} from '@reduxjs/toolkit/dist/query/endpointDefinitions'
-import type {
-  QueryResultSelectorResult,
-  MutationResultSelectorResult,
-  SkipToken,
-} from '@reduxjs/toolkit/dist/query/core/buildSelectors'
-import type {
-  QueryActionCreatorResult,
-  MutationActionCreatorResult,
-} from '@reduxjs/toolkit/dist/query/core/buildInitiate'
-import type { SerializeQueryArgs } from '@reduxjs/toolkit/dist/query/defaultSerializeQueryArgs'
+
 import { shallowEqual } from 'react-redux'
-import type { Api, ApiContext } from '@reduxjs/toolkit/dist/query/apiTypes'
-import type {
-  Id,
-  NoInfer,
-  Override,
-} from '@reduxjs/toolkit/dist/query/tsHelpers'
-import type {
-  ApiEndpointMutation,
-  ApiEndpointQuery,
-  CoreModule,
-  PrefetchOptions,
-} from '@reduxjs/toolkit/dist/query/core/module'
-import type { ReactHooksModuleOptions } from './module'
-import { useStableQueryArgs } from './useSerializedStableValue'
+import type { BaseQueryFn } from '../baseQueryTypes'
+import type { SubscriptionSelectors } from '../core/buildMiddleware/types'
+import { defaultSerializeQueryArgs } from '../defaultSerializeQueryArgs'
 import type { UninitializedValue } from './constants'
 import { UNINITIALIZED_VALUE } from './constants'
+import type { ReactHooksModuleOptions } from './module'
+import { useStableQueryArgs } from './useSerializedStableValue'
 import { useShallowStableValue } from './useShallowStableValue'
-import type { BaseQueryFn } from '../baseQueryTypes'
-import { defaultSerializeQueryArgs } from '../defaultSerializeQueryArgs'
 
 // Copy-pasted from React-Redux
 export const useIsomorphicLayoutEffect =
@@ -378,7 +370,7 @@ export type UseQueryStateOptions<
 export type UseQueryStateResult<
   _ extends QueryDefinition<any, any, any, any>,
   R
-> = NoInfer<R>
+> = TSHelpersNoInfer<R>
 
 /**
  * Helper type to manually type the result
@@ -391,7 +383,7 @@ export type TypedUseQueryStateResult<
   R = UseQueryStateDefaultResult<
     QueryDefinition<QueryArg, BaseQuery, string, ResultType, string>
   >
-> = NoInfer<R>
+> = TSHelpersNoInfer<R>
 
 type UseQueryStateBaseResult<D extends QueryDefinition<any, any, any, any>> =
   QuerySubState<D> & {
@@ -424,15 +416,15 @@ type UseQueryStateBaseResult<D extends QueryDefinition<any, any, any, any>> =
   }
 
 type UseQueryStateDefaultResult<D extends QueryDefinition<any, any, any, any>> =
-  Id<
-    | Override<
+  TSHelpersId<
+    | TSHelpersOverride<
         Extract<
           UseQueryStateBaseResult<D>,
           { status: QueryStatus.uninitialized }
         >,
         { isUninitialized: true }
       >
-    | Override<
+    | TSHelpersOverride<
         UseQueryStateBaseResult<D>,
         | { isLoading: true; isFetching: boolean; data: undefined }
         | ({
@@ -481,7 +473,7 @@ export type UseMutationStateOptions<
 export type UseMutationStateResult<
   D extends MutationDefinition<any, any, any, any>,
   R
-> = NoInfer<R> & {
+> = TSHelpersNoInfer<R> & {
   originalArgs?: QueryArgFrom<D>
   /**
    * Resets the hook state to it's initial `uninitialized` state.
@@ -543,9 +535,6 @@ export type MutationTrigger<D extends MutationDefinition<any, any, any, any>> =
     (arg: QueryArgFrom<D>): MutationActionCreatorResult<D>
   }
 
-const defaultQueryStateSelector: QueryStateSelector<any, any> = (x) => x
-const defaultMutationStateSelector: MutationStateSelector<any, any> = (x) => x
-
 /**
  * Wrapper around `defaultQueryStateSelector` to be used in `useQuery`.
  * We want the initial render to already come back with
@@ -587,6 +576,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
     batch,
     hooks: { useDispatch, useSelector, useStore },
     unstable__sideEffectsInRender,
+    createSelector,
   },
   serializeQueryArgs,
   context,
@@ -680,6 +670,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
         refetchOnMountOrArgChange,
         skip = false,
         pollingInterval = 0,
+        skipPollingIfUnfocused = false,
       } = {}
     ) => {
       const { initiate } = api.endpoints[name] as ApiEndpointQuery<
@@ -687,6 +678,27 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
         Definitions
       >
       const dispatch = useDispatch<ThunkDispatch<any, any, UnknownAction>>()
+      const subscriptionSelectorsRef = useRef<SubscriptionSelectors>()
+      if (!subscriptionSelectorsRef.current) {
+        const returnedValue = dispatch(
+          api.internalActions.internal_getRTKQSubscriptions()
+        )
+
+        if (process.env.NODE_ENV !== 'production') {
+          if (
+            typeof returnedValue !== 'object' ||
+            typeof returnedValue?.type === 'string'
+          ) {
+            throw new Error(
+              `Warning: Middleware for RTK-Query API at reducerPath "${api.reducerPath}" has not been added to the store.
+    You must add the middleware for RTK-Query to function correctly!`
+            )
+          }
+        }
+
+        subscriptionSelectorsRef.current =
+          returnedValue as unknown as SubscriptionSelectors
+      }
       const stableArg = useStableQueryArgs(
         skip ? skipToken : arg,
         // Even if the user provided a per-endpoint `serializeQueryArgs` with
@@ -702,6 +714,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
         refetchOnReconnect,
         refetchOnFocus,
         pollingInterval,
+        skipPollingIfUnfocused,
       })
 
       const lastRenderHadSubscription = useRef(false)
@@ -710,28 +723,15 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
 
       let { queryCacheKey, requestId } = promiseRef.current || {}
 
-      // HACK Because the latest state is in the middleware, we actually
-      // dispatch an action that will be intercepted and returned.
+      // HACK We've saved the middleware subscription lookup callbacks into a ref,
+      // so we can directly check here if the subscription exists for this query.
       let currentRenderHasSubscription = false
       if (queryCacheKey && requestId) {
-        // This _should_ return a boolean, even if the types don't line up
-        const returnedValue = dispatch(
-          api.internalActions.internal_probeSubscription({
+        currentRenderHasSubscription =
+          subscriptionSelectorsRef.current.isRequestSubscribed(
             queryCacheKey,
-            requestId,
-          })
-        )
-
-        if (process.env.NODE_ENV !== 'production') {
-          if (typeof returnedValue !== 'boolean') {
-            throw new Error(
-              `Warning: Middleware for RTK-Query API at reducerPath "${api.reducerPath}" has not been added to the store.
-    You must add the middleware for RTK-Query to function correctly!`
-            )
-          }
-        }
-
-        currentRenderHasSubscription = !!returnedValue
+            requestId
+          )
       }
 
       const subscriptionRemoved =
@@ -815,6 +815,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
       refetchOnReconnect,
       refetchOnFocus,
       pollingInterval = 0,
+      skipPollingIfUnfocused = false,
     } = {}) => {
       const { initiate } = api.endpoints[name] as ApiEndpointQuery<
         QueryDefinition<any, any, any, any, any>,
@@ -829,6 +830,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
         refetchOnReconnect,
         refetchOnFocus,
         pollingInterval,
+        skipPollingIfUnfocused,
       })
 
       usePossiblyImmediateEffect(() => {
@@ -912,7 +914,12 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
               (_: ApiRootState, lastResult: any) => lastResult,
               (_: ApiRootState) => stableArg,
             ],
-            queryStatePreSelector
+            queryStatePreSelector,
+            {
+              memoizeOptions: {
+                resultEqualityCheck: shallowEqual,
+              },
+            }
           ),
         [select, stableArg]
       )
@@ -920,7 +927,9 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
       const querySelector: Selector<ApiRootState, any, [any]> = useMemo(
         () =>
           selectFromResult
-            ? createSelector([selectDefaultResult], selectFromResult)
+            ? createSelector([selectDefaultResult], selectFromResult, {
+                devModeChecks: { identityFunctionCheck: 'never' },
+              })
             : selectDefaultResult,
         [selectDefaultResult, selectFromResult]
       )
@@ -983,10 +992,7 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
   }
 
   function buildMutationHook(name: string): UseMutation<any> {
-    return ({
-      selectFromResult = defaultMutationStateSelector,
-      fixedCacheKey,
-    } = {}) => {
+    return ({ selectFromResult, fixedCacheKey } = {}) => {
       const { select, initiate } = api.endpoints[name] as ApiEndpointMutation<
         MutationDefinition<any, any, any, any, any>,
         Definitions
@@ -1013,13 +1019,16 @@ export function buildHooks<Definitions extends EndpointDefinitions>({
       )
 
       const { requestId } = promise || {}
+      const selectDefaultResult = useMemo(
+        () => select({ fixedCacheKey, requestId: promise?.requestId }),
+        [fixedCacheKey, promise, select]
+      )
       const mutationSelector = useMemo(
-        () =>
-          createSelector(
-            [select({ fixedCacheKey, requestId: promise?.requestId })],
-            selectFromResult
-          ),
-        [select, promise, selectFromResult, fixedCacheKey]
+        (): Selector<RootState<Definitions, any, any>, any> =>
+          selectFromResult
+            ? createSelector([selectDefaultResult], selectFromResult)
+            : selectDefaultResult,
+        [selectFromResult, selectDefaultResult]
       )
 
       const currentState = useSelector(mutationSelector, shallowEqual)

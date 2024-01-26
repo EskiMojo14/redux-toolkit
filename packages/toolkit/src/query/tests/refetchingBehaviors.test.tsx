@@ -1,9 +1,7 @@
-import { vi } from 'vitest'
-import * as React from 'react'
 import { createApi, setupListeners } from '@reduxjs/toolkit/query/react'
-import { act, fireEvent, render, waitFor, screen } from '@testing-library/react'
-import { setupApiStore, waitMs } from './helpers'
-import { delay } from '../../utils'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { delay } from 'msw'
+import { setupApiStore } from '../../tests/utils/helpers'
 
 // Just setup a temporary in-memory counter for tests that `getIncrementedAmount`.
 // This can be used to test how many renders happen due to data changes or
@@ -12,7 +10,7 @@ let amount = 0
 
 const defaultApi = createApi({
   baseQuery: async (arg: any) => {
-    await waitMs()
+    await delay(150)
     if ('amount' in arg?.body) {
       amount += 1
     }
@@ -38,7 +36,7 @@ const defaultApi = createApi({
 
 const storeRef = setupApiStore(defaultApi)
 
-let getIncrementedAmountState = () =>
+const getIncrementedAmountState = () =>
   storeRef.store.getState().api.queries['getIncrementedAmount(undefined)']
 
 afterEach(() => {
@@ -77,7 +75,7 @@ describe('refetchOnFocus tests', () => {
       fireEvent.focus(window)
     })
 
-    await waitMs()
+    await delay(150)
 
     await waitFor(() =>
       expect(screen.getByTestId('amount').textContent).toBe('2')
@@ -117,7 +115,7 @@ describe('refetchOnFocus tests', () => {
       fireEvent.focus(window)
     })
 
-    await waitMs()
+    await delay(150)
 
     await waitFor(() =>
       expect(screen.getByTestId('amount').textContent).toBe('1')
@@ -394,7 +392,7 @@ describe('customListenersHandler', () => {
       }
     )
 
-    await waitMs()
+    await delay(150)
 
     let data, isLoading, isFetching
 
@@ -432,10 +430,12 @@ describe('customListenersHandler', () => {
     })
     expect(dispatchSpy).toHaveBeenCalled()
 
-    // Ignore RTKQ middleware `internal_probeSubscription` calls
-    const mockCallsWithoutInternals = dispatchSpy.mock.calls.filter(
-      (call) => !(call[0] as any)?.type?.includes('internal')
-    )
+    // Ignore RTKQ middleware internal data calls
+    const mockCallsWithoutInternals = dispatchSpy.mock.calls.filter((call) => {
+      const type = (call[0] as any)?.type ?? ''
+      const reIsInternal = /internal/i
+      return !reIsInternal.test(type)
+    })
 
     expect(
       defaultApi.internalActions.onOnline.match(

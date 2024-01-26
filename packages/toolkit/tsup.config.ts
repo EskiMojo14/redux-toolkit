@@ -1,12 +1,11 @@
-import { fileURLToPath } from 'url'
-import path from 'path'
-import fs from 'fs'
-import rimraf from 'rimraf'
-import { BuildOptions as ESBuildOptions } from 'esbuild'
+import * as babel from '@babel/core'
+import type { Plugin } from 'esbuild'
+import { getBuildExtensions } from 'esbuild-extra'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Options as TsupOptions } from 'tsup'
 import { defineConfig } from 'tsup'
-
-import { delay } from './src/utils'
 
 // No __dirname under Node ESM
 const __filename = fileURLToPath(import.meta.url)
@@ -15,14 +14,13 @@ const __dirname = path.dirname(__filename)
 const outputDir = path.join(__dirname, 'dist')
 
 export interface BuildOptions {
-  format: 'cjs' | 'umd' | 'esm'
+  format: 'cjs' | 'esm'
   name:
     | 'development'
     | 'production.min'
     | 'legacy-esm'
     | 'modern'
-    | 'modern.development'
-    | 'modern.production.min'
+    | 'browser'
     | 'umd'
     | 'umd.min'
   minify: boolean
@@ -77,36 +75,14 @@ const buildTargets: BuildOptions[] = [
     minify: false,
     env: '',
   },
-  // ESM, pre-compiled "dev": browser development
-  {
-    format: 'esm',
-    name: 'modern.development',
-    target: 'esnext',
-    minify: false,
-    env: 'development',
-  },
   // ESM, pre-compiled "prod": browser prod
   {
     format: 'esm',
-    name: 'modern.production.min',
+    name: 'browser',
     target: 'esnext',
     minify: true,
     env: 'production',
   },
-  // {
-  //   format: 'umd',
-  //   name: 'umd',
-  //   target: 'es2018',
-  //   minify: false,
-  //   env: 'development',
-  // },
-  // {
-  //   format: 'umd',
-  //   name: 'umd.min',
-  //   target: 'es2018',
-  //   minify: true,
-  //   env: 'production',
-  // },
 ]
 
 const entryPoints: EntryPointOptions[] = [
@@ -151,6 +127,37 @@ if (process.env.NODE_ENV === 'production') {
   )
 }
 
+// Extract error strings, replace them with error codes, and write messages to a file
+const mangleErrorsTransform: Plugin = {
+  name: 'mangle-errors-plugin',
+  setup(build) {
+    const { onTransform } = getBuildExtensions(build, 'mangle-errors-plugin')
+
+    onTransform({ loaders: ['ts', 'tsx'] }, async (args) => {
+      try {
+        const res = babel.transformSync(args.code, {
+          parserOpts: {
+            plugins: ['typescript', 'jsx'],
+          },
+          plugins: [['./scripts/mangleErrors.cjs', { minify: false }]],
+        })!
+        return {
+          code: res.code!,
+          map: res.map!,
+        }
+      } catch (err) {
+        console.error('Babel mangleErrors error: ', err)
+        return null
+      }
+    })
+  },
+}
+
+const tsconfig: NonNullable<TsupOptions['tsconfig']> = path.join(
+  __dirname,
+  './tsconfig.build.json'
+)
+
 export default defineConfig((options) => {
   const configs = entryPoints
     .map((entryPointConfig) => {
@@ -184,12 +191,14 @@ export default defineConfig((options) => {
             [outputFilename]: entryPoint,
           },
           format,
+          tsconfig,
           outDir: outputFolder,
           target,
           outExtension: () => ({ js: extension }),
           minify,
           sourcemap: true,
           external: externals,
+          esbuildPlugins: [mangleErrorsTransform],
           esbuildOptions(options) {
             // Needed to prevent auto-replacing of process.env.NODE_ENV in all builds
             options.platform = 'neutral'

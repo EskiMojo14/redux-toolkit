@@ -7,11 +7,16 @@ import type {
   Store,
   UnknownAction,
 } from 'redux'
-import { applyMiddleware, createStore, compose, combineReducers } from 'redux'
+import {
+  applyMiddleware,
+  createStore,
+  compose,
+  combineReducers,
+  isPlainObject,
+} from 'redux'
 import type { DevToolsEnhancerOptions as DevToolsOptions } from './devtoolsExtension'
 import { composeWithDevTools } from './devtoolsExtension'
 
-import isPlainObject from './isPlainObject'
 import type {
   ThunkMiddlewareFor,
   GetDefaultMiddleware,
@@ -21,6 +26,7 @@ import type {
   ExtractDispatchExtensions,
   ExtractStoreExtensions,
   ExtractStateExtensions,
+  UnknownIfNonSpecific,
 } from './tsHelpers'
 import type { Tuple } from './utils'
 import type { GetDefaultEnhancers } from './getDefaultEnhancers'
@@ -53,7 +59,7 @@ export interface ConfigureStoreOptions<
    * @example `middleware: (gDM) => gDM().concat(logger, apiMiddleware, yourCustomMiddleware)`
    * @see https://redux-toolkit.js.org/api/getDefaultMiddleware#intended-usage
    */
-  middleware?: ((getDefaultMiddleware: GetDefaultMiddleware<S>) => M) | M
+  middleware?: (getDefaultMiddleware: GetDefaultMiddleware<S>) => M
 
   /**
    * Whether to enable Redux DevTools integration. Defaults to `true`.
@@ -98,7 +104,8 @@ export type EnhancedStore<
   S = any,
   A extends Action = UnknownAction,
   E extends Enhancers = Enhancers
-> = ExtractStoreExtensions<E> & Store<S & ExtractStateExtensions<E>, A>
+> = ExtractStoreExtensions<E> &
+  Store<S, A, UnknownIfNonSpecific<ExtractStateExtensions<E>>>
 
 /**
  * A friendly abstraction over the standard Redux `createStore()` function.
@@ -121,7 +128,7 @@ export function configureStore<
 
   const {
     reducer = undefined,
-    middleware = getDefaultMiddleware(),
+    middleware,
     devTools = true,
     preloadedState = undefined,
     enhancers = undefined,
@@ -135,19 +142,25 @@ export function configureStore<
     rootReducer = combineReducers(reducer) as unknown as Reducer<S, A, P>
   } else {
     throw new Error(
-      '"reducer" is a required argument, and must be a function or an object of functions that can be passed to combineReducers'
+      '`reducer` is a required argument, and must be a function or an object of functions that can be passed to combineReducers'
     )
   }
 
-  let finalMiddleware = middleware
-  if (typeof finalMiddleware === 'function') {
-    finalMiddleware = finalMiddleware(getDefaultMiddleware)
+  if (!IS_PRODUCTION && middleware && typeof middleware !== 'function') {
+    throw new Error('`middleware` field must be a callback')
+  }
+
+  let finalMiddleware: Tuple<Middlewares<S>>
+  if (typeof middleware === 'function') {
+    finalMiddleware = middleware(getDefaultMiddleware)
 
     if (!IS_PRODUCTION && !Array.isArray(finalMiddleware)) {
       throw new Error(
         'when using a middleware builder function, an array of middleware must be returned'
       )
     }
+  } else {
+    finalMiddleware = getDefaultMiddleware()
   }
   if (
     !IS_PRODUCTION &&
@@ -173,7 +186,7 @@ export function configureStore<
   const getDefaultEnhancers = buildGetDefaultEnhancers<M>(middlewareEnhancer)
 
   if (!IS_PRODUCTION && enhancers && typeof enhancers !== 'function') {
-    throw new Error('"enhancers" field must be a callback')
+    throw new Error('`enhancers` field must be a callback')
   }
 
   let storeEnhancers =
@@ -182,7 +195,7 @@ export function configureStore<
       : getDefaultEnhancers()
 
   if (!IS_PRODUCTION && !Array.isArray(storeEnhancers)) {
-    throw new Error('"enhancers" callback must return an array')
+    throw new Error('`enhancers` callback must return an array')
   }
   if (
     !IS_PRODUCTION &&

@@ -306,7 +306,7 @@ describe('createReducer', () => {
         )
       )
       expect(() => reducer(5, decrement(5))).toThrowErrorMatchingInlineSnapshot(
-        `"A case reducer on a non-draftable value must not return undefined"`
+        `[Error: A case reducer on a non-draftable value must not return undefined]`
       )
     })
     test('allows you to return undefined if the state was null, thus skipping an update', () => {
@@ -354,7 +354,7 @@ describe('createReducer', () => {
             .addCase(decrement, (state, action) => state - action.payload)
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"addCase cannot be called with two reducers for the same action type"`
+        `[Error: \`builder.addCase\` cannot be called with two reducers for the same action type 'increment']`
       )
       expect(() =>
         createReducer(0, (builder) =>
@@ -364,7 +364,25 @@ describe('createReducer', () => {
             .addCase(decrement, (state, action) => state - action.payload)
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"addCase cannot be called with two reducers for the same action type"`
+        `[Error: \`builder.addCase\` cannot be called with two reducers for the same action type 'increment']`
+      )
+    })
+
+    test('will throw if an empty type is used', () => {
+      const customActionCreator = (payload: number) => ({
+        type: 'custom_action',
+        payload,
+      })
+      customActionCreator.type = ""
+      expect(() =>
+        createReducer(0, (builder) =>
+          builder.addCase(
+            customActionCreator,
+            (state, action) => state + action.payload
+          )
+        )
+      ).toThrowErrorMatchingInlineSnapshot(
+        `[Error: \`builder.addCase\` cannot be called with an empty action type]`
       )
     })
   })
@@ -489,14 +507,14 @@ describe('createReducer', () => {
             .addCase(incrementBy, () => {})
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"\`builder.addCase\` should only be called before calling \`builder.addMatcher\`"`
+        `[Error: \`builder.addCase\` should only be called before calling \`builder.addMatcher\`]`
       )
       expect(() =>
         createReducer(initialState, (builder: any) =>
           builder.addDefaultCase(() => {}).addCase(incrementBy, () => {})
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"\`builder.addCase\` should only be called before calling \`builder.addDefaultCase\`"`
+        `[Error: \`builder.addCase\` should only be called before calling \`builder.addDefaultCase\`]`
       )
       expect(() =>
         createReducer(initialState, (builder: any) =>
@@ -505,14 +523,14 @@ describe('createReducer', () => {
             .addMatcher(numberActionMatcher, () => {})
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"\`builder.addMatcher\` should only be called before calling \`builder.addDefaultCase\`"`
+        `[Error: \`builder.addMatcher\` should only be called before calling \`builder.addDefaultCase\`]`
       )
       expect(() =>
         createReducer(initialState, (builder: any) =>
           builder.addDefaultCase(() => {}).addDefaultCase(() => {})
         )
       ).toThrowErrorMatchingInlineSnapshot(
-        `"\`builder.addDefaultCase\` can only be called once"`
+        `[Error: \`builder.addDefaultCase\` can only be called once]`
       )
     })
   })

@@ -1,7 +1,12 @@
-import { vi } from 'vitest'
 import { createApi } from '@reduxjs/toolkit/query/react'
-import { actionsReducer, hookWaitFor, setupApiStore, waitMs } from './helpers'
-import { renderHook, act } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import { delay } from 'msw'
+import {
+  actionsReducer,
+  hookWaitFor,
+  setupApiStore,
+} from '../../tests/utils/helpers'
+import type { InvalidationState } from '../core/apiState'
 
 interface Post {
   id: string
@@ -10,7 +15,9 @@ interface Post {
 }
 
 const baseQuery = vi.fn()
-beforeEach(() => baseQuery.mockReset())
+beforeEach(() => {
+  baseQuery.mockReset()
+})
 
 const api = createApi({
   baseQuery: (...args: any[]) => {
@@ -26,6 +33,13 @@ const api = createApi({
     post: build.query<Post, string>({
       query: (id) => `post/${id}`,
       providesTags: ['Post'],
+    }),
+    listPosts: build.query<Post[], void>({
+      query: () => `posts`,
+      providesTags: (result) => [
+        ...(result?.map(({ id }) => ({ type: 'Post' as const, id })) ?? []),
+        'Post',
+      ],
     }),
     updatePost: build.mutation<void, Pick<Post, 'id'> & Partial<Post>>({
       query: ({ id, ...patch }) => ({
@@ -97,7 +111,7 @@ describe('basic lifecycle', () => {
 
     expect(onError).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
-    await act(() => waitMs(5))
+    await act(() => delay(5))
     expect(onError).not.toHaveBeenCalled()
     expect(onSuccess).toHaveBeenCalledWith({ data: 'success', meta: 'meta' })
   })
@@ -119,7 +133,7 @@ describe('basic lifecycle', () => {
     expect(baseQuery).toHaveBeenCalledWith('arg', expect.any(Object), undefined)
     expect(onError).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
-    await act(() => waitMs(5))
+    await act(() => delay(5))
     expect(onError).toHaveBeenCalledWith({
       error: 'error',
       isUnhandledError: false,
@@ -182,6 +196,126 @@ describe('updateQueryData', () => {
     })
 
     expect(result.current.data).toEqual(dataBefore)
+  })
+
+  test('updates (list) cache values including provided tags, undos that', async () => {
+    baseQuery
+      .mockResolvedValueOnce([
+        {
+          id: '3',
+          title: 'All about cheese.',
+          contents: 'TODO',
+        },
+      ])
+      .mockResolvedValueOnce(42)
+    const { result } = renderHook(() => api.endpoints.listPosts.useQuery(), {
+      wrapper: storeRef.wrapper,
+    })
+    await hookWaitFor(() => expect(result.current.isSuccess).toBeTruthy())
+
+    let provided!: InvalidationState<'Post'>
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    const provided3 = provided.Post['3']
+
+    let returnValue!: ReturnType<ReturnType<typeof api.util.updateQueryData>>
+    act(() => {
+      returnValue = storeRef.store.dispatch(
+        api.util.updateQueryData(
+          'listPosts',
+          undefined,
+          (draft) => {
+            draft.push({
+              id: '4',
+              title: 'Mostly about cheese.',
+              contents: 'TODO',
+            })
+          },
+          true
+        )
+      )
+    })
+
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    const provided4 = provided.Post['4']
+
+    expect(provided4).toEqual(provided3)
+
+    act(() => {
+      returnValue.undo()
+    })
+
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    const provided4Next = provided.Post['4']
+
+    expect(provided4Next).toEqual([])
+  })
+
+  test('updates (list) cache values excluding provided tags, undoes that', async () => {
+    baseQuery
+      .mockResolvedValueOnce([
+        {
+          id: '3',
+          title: 'All about cheese.',
+          contents: 'TODO',
+        },
+      ])
+      .mockResolvedValueOnce(42)
+    const { result } = renderHook(() => api.endpoints.listPosts.useQuery(), {
+      wrapper: storeRef.wrapper,
+    })
+    await hookWaitFor(() => expect(result.current.isSuccess).toBeTruthy())
+
+    let provided!: InvalidationState<'Post'>
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    let returnValue!: ReturnType<ReturnType<typeof api.util.updateQueryData>>
+    act(() => {
+      returnValue = storeRef.store.dispatch(
+        api.util.updateQueryData(
+          'listPosts',
+          undefined,
+          (draft) => {
+            draft.push({
+              id: '4',
+              title: 'Mostly about cheese.',
+              contents: 'TODO',
+            })
+          },
+          false
+        )
+      )
+    })
+
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    const provided4 = provided.Post['4']
+
+    expect(provided4).toEqual(undefined)
+
+    act(() => {
+      returnValue.undo()
+    })
+
+    act(() => {
+      provided = storeRef.store.getState().api.provided
+    })
+
+    const provided4Next = provided.Post['4']
+
+    expect(provided4Next).toEqual(undefined)
   })
 
   test('does not update non-existing values', async () => {

@@ -1,4 +1,4 @@
-import { isAsyncThunkAction, isFulfilled } from '@reduxjs/toolkit'
+import { isAsyncThunkAction, isFulfilled } from '../rtkImports'
 import type { UnknownAction } from 'redux'
 import type { ThunkDispatch } from 'redux-thunk'
 import type { BaseQueryFn, BaseQueryMeta } from '../../baseQueryTypes'
@@ -253,7 +253,9 @@ export const buildCacheLifecycleHandler: InternalHandlerBuilder = ({
 
   function getCacheKey(action: any) {
     if (isQueryThunk(action)) return action.meta.arg.queryCacheKey
-    if (isMutationThunk(action)) return action.meta.requestId
+    if (isMutationThunk(action)) {
+      return action.meta.arg.fixedCacheKey ?? action.meta.requestId
+    }
     if (api.internalActions.removeQueryResult.match(action))
       return action.payload.queryCacheKey
     if (api.internalActions.removeMutationResult.match(action))

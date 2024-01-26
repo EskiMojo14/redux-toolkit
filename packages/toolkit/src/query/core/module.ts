@@ -49,6 +49,7 @@ import type { ReferenceCacheLifecycle } from './buildMiddleware/cacheLifecycle'
 import type { ReferenceQueryLifecycle } from './buildMiddleware/queryLifecycle'
 import type { ReferenceCacheCollection } from './buildMiddleware/cacheCollection'
 import { enablePatches } from 'immer'
+import { createSelector as _createSelector } from './rtkImports'
 
 /**
  * `ifOlderThan` - (default: `false` | `number`) - _number is value in seconds_
@@ -356,6 +357,16 @@ declare module '../apiTypes' {
           originalArgs: any
           queryCacheKey: string
         }>
+
+        /**
+         * A function to select all arguments currently cached for a given endpoint.
+         *
+         * Can be used for mutations that want to do optimistic updates instead of invalidating a set of tags, but don't know exactly what they need to update.
+         */
+        selectCachedArgsForQuery: <QueryName extends QueryKeys<Definitions>>(
+          state: RootState<Definitions, string, ReducerPath>,
+          queryName: QueryName
+        ) => Array<QueryArgFrom<Definitions[QueryName]>>
       }
       /**
        * Endpoints based on the input endpoints provided to `createApi`, containing `select` and `action matchers`.
@@ -421,6 +432,13 @@ export type ListenerActions = {
 
 export type InternalActions = SliceActions & ListenerActions
 
+export interface CoreModuleOptions {
+  /**
+   * A selector creator (usually from `reselect`, or matching the same signature)
+   */
+  createSelector?: typeof _createSelector
+}
+
 /**
  * Creates a module containing the basic redux logic for use with `buildCreateApi`.
  *
@@ -429,7 +447,9 @@ export type InternalActions = SliceActions & ListenerActions
  * const createBaseApi = buildCreateApi(coreModule());
  * ```
  */
-export const coreModule = (): Module<CoreModule> => ({
+export const coreModule = ({
+  createSelector = _createSelector,
+}: CoreModuleOptions = {}): Module<CoreModule> => ({
   name: coreModuleName,
   init(
     api,
@@ -442,6 +462,7 @@ export const coreModule = (): Module<CoreModule> => ({
       refetchOnMountOrArgChange,
       refetchOnFocus,
       refetchOnReconnect,
+      invalidationBehavior,
     },
     context
   ) {
@@ -489,6 +510,7 @@ export const coreModule = (): Module<CoreModule> => ({
       context,
       api,
       serializeQueryArgs,
+      assertTagType,
     })
 
     const { reducer, actions: sliceActions } = buildSlice({
@@ -503,6 +525,7 @@ export const coreModule = (): Module<CoreModule> => ({
         refetchOnMountOrArgChange,
         keepUnusedDataFor,
         reducerPath,
+        invalidationBehavior,
       },
     })
 
@@ -527,13 +550,18 @@ export const coreModule = (): Module<CoreModule> => ({
 
     safeAssign(api, { reducer: reducer as any, middleware })
 
-    const { buildQuerySelector, buildMutationSelector, selectInvalidatedBy } =
-      buildSelectors({
-        serializeQueryArgs: serializeQueryArgs as any,
-        reducerPath,
-      })
+    const {
+      buildQuerySelector,
+      buildMutationSelector,
+      selectInvalidatedBy,
+      selectCachedArgsForQuery,
+    } = buildSelectors({
+      serializeQueryArgs: serializeQueryArgs as any,
+      reducerPath,
+      createSelector,
+    })
 
-    safeAssign(api.util, { selectInvalidatedBy })
+    safeAssign(api.util, { selectInvalidatedBy, selectCachedArgsForQuery })
 
     const {
       buildInitiateQuery,

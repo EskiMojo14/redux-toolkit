@@ -1,3 +1,7 @@
+// This must remain here so that the `mangleErrors.cjs` build script
+// does not have to import this into each source file it rewrites.
+import { formatProdErrorMessage } from './formatProdErrorMessage'
+
 export * from 'redux'
 export {
   produce as createNextState,
@@ -10,16 +14,10 @@ export type { Draft } from 'immer'
 export {
   createSelector,
   createSelectorCreator,
-  defaultMemoize,
-  autotrackMemoize,
+  lruMemoize,
   weakMapMemoize,
 } from 'reselect'
-export type {
-  Selector,
-  OutputParametricSelector,
-  OutputSelector,
-  ParametricSelector,
-} from 'reselect'
+export type { Selector, OutputSelector } from 'reselect'
 export {
   createDraftSafeSelector,
   createDraftSafeSelectorCreator,
@@ -39,7 +37,6 @@ export type { DevToolsEnhancerOptions } from './devtoolsExtension'
 export {
   // js
   createAction,
-  isAction,
   isActionCreator,
   isFSA as isFluxStandardAction,
 } from './createAction'
@@ -67,6 +64,9 @@ export type {
 export {
   // js
   createSlice,
+  buildCreateSlice,
+  asyncThunkCreator,
+  ReducerType,
 } from './createSlice'
 
 export type {
@@ -78,6 +78,7 @@ export type {
   ValidateSliceCaseReducers,
   CaseReducerWithPrepare,
   ReducerCreators,
+  SliceSelectors,
 } from './createSlice'
 export type { ActionCreatorInvariantMiddlewareOptions } from './actionCreatorInvariantMiddleware'
 export { createActionCreatorInvariantMiddleware } from './actionCreatorInvariantMiddleware'
@@ -150,8 +151,6 @@ export type {
 
 export { nanoid } from './nanoid'
 
-export { default as isPlainObject } from './isPlainObject'
-
 export type {
   ListenerEffect,
   ListenerMiddleware,
@@ -185,6 +184,12 @@ export {
   TaskAbortError,
 } from './listenerMiddleware/index'
 
+export type {
+  DynamicMiddlewareInstance,
+  GetDispatch,
+  GetState,
+  MiddlewareApiConfig,
+} from './dynamicMiddleware/types'
 export { createDynamicMiddleware } from './dynamicMiddleware/index'
 
 export {
@@ -197,3 +202,7 @@ export type { AutoBatchOptions } from './autoBatchEnhancer'
 export { combineSlices } from './combineSlices'
 
 export type { WithSlice } from './combineSlices'
+
+export type { ExtractDispatchExtensions as TSHelpersExtractDispatchExtensions, SafePromise } from './tsHelpers'
+
+export { formatProdErrorMessage } from './formatProdErrorMessage'

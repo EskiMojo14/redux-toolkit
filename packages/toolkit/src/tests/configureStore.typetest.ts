@@ -1,19 +1,23 @@
 /* eslint-disable no-lone-blocks */
+import type { ConfigureStoreOptions, PayloadAction } from '@reduxjs/toolkit'
+import { Tuple, configureStore, createSlice } from '@reduxjs/toolkit'
 import type {
+  Action,
   Dispatch,
-  UnknownAction,
   Middleware,
   Reducer,
   Store,
-  Action,
   StoreEnhancer,
+  UnknownAction,
 } from 'redux'
 import { applyMiddleware, combineReducers } from 'redux'
-import type { PayloadAction, ConfigureStoreOptions } from '@reduxjs/toolkit'
-import { configureStore, createSlice, Tuple } from '@reduxjs/toolkit'
-import type { ThunkMiddleware, ThunkAction, ThunkDispatch } from 'redux-thunk'
+import type { ThunkAction, ThunkDispatch, ThunkMiddleware } from 'redux-thunk'
 import { thunk } from 'redux-thunk'
-import { expectNotAny, expectType } from './helpers'
+import {
+  expectExactType,
+  expectNotAny,
+  expectType,
+} from './utils/typeTestHelpers'
 
 const _anyMiddleware: any = () => () => () => {}
 
@@ -74,19 +78,19 @@ const _anyMiddleware: any = () => () => () => {}
 
   configureStore({
     reducer: () => 0,
-    middleware: new Tuple(middleware),
+    middleware: () => new Tuple(middleware),
   })
 
   configureStore({
     reducer: () => 0,
     // @ts-expect-error
-    middleware: [middleware],
+    middleware: () => [middleware],
   })
 
   configureStore({
     reducer: () => 0,
     // @ts-expect-error
-    middleware: new Tuple('not middleware'),
+    middleware: () => new Tuple('not middleware'),
   })
 }
 
@@ -136,6 +140,17 @@ const _anyMiddleware: any = () => () => () => {}
     reducer: (_: number) => 0,
     preloadedState: 'non-matching state type',
   })
+}
+
+/**
+ * Test: nullable state is preserved
+ */
+
+{
+  const store = configureStore({
+    reducer: (): string | null => null,
+  })
+  expectExactType<string | null>(null)(store.getState())
 }
 
 /*
@@ -520,7 +535,7 @@ const _anyMiddleware: any = () => () => () => {}
   {
     const store = configureStore({
       reducer: reducerA,
-      middleware: new Tuple(),
+      middleware: () => new Tuple(),
     })
     // @ts-expect-error
     store.dispatch(thunkA())
@@ -533,7 +548,7 @@ const _anyMiddleware: any = () => () => () => {}
   {
     const store = configureStore({
       reducer: reducerA,
-      middleware: new Tuple(thunk as ThunkMiddleware<StateA>),
+      middleware: () => new Tuple(thunk as ThunkMiddleware<StateA>),
     })
     store.dispatch(thunkA())
     // @ts-expect-error
@@ -545,9 +560,8 @@ const _anyMiddleware: any = () => () => () => {}
   {
     const store = configureStore({
       reducer: reducerA,
-      middleware: new Tuple(
-        0 as unknown as Middleware<(a: StateA) => boolean, StateA>
-      ),
+      middleware: () =>
+        new Tuple(0 as unknown as Middleware<(a: StateA) => boolean, StateA>),
     })
     const result: boolean = store.dispatch(5)
     // @ts-expect-error
@@ -566,7 +580,7 @@ const _anyMiddleware: any = () => () => () => {}
     >
     const store = configureStore({
       reducer: reducerA,
-      middleware,
+      middleware: () => middleware,
     })
 
     const result: 'A' = store.dispatch('a')

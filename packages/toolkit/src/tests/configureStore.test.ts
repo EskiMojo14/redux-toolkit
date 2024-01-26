@@ -1,11 +1,11 @@
-import { vi } from 'vitest'
+import * as DevTools from '@internal/devtoolsExtension'
 import type { StoreEnhancer } from '@reduxjs/toolkit'
 import { Tuple } from '@reduxjs/toolkit'
 import type * as Redux from 'redux'
-import type * as DevTools from '@internal/devtoolsExtension'
+import { vi } from 'vitest'
 
-vi.doMock('redux', async () => {
-  const redux: any = await vi.importActual('redux')
+vi.doMock('redux', async (importOriginal) => {
+  const redux = await importOriginal<typeof import('redux')>()
 
   vi.spyOn(redux, 'applyMiddleware')
   vi.spyOn(redux, 'combineReducers')
@@ -15,45 +15,8 @@ vi.doMock('redux', async () => {
   return redux
 })
 
-vi.doMock('@internal/devtoolsExtension', async () => {
-  const devtools: typeof DevTools = await vi.importActual(
-    '@internal/devtoolsExtension'
-  )
-  vi.spyOn(devtools, 'composeWithDevTools') // @remap-prod-remove-line
-  return devtools
-})
-
-function originalReduxCompose(...funcs: Function[]) {
-  if (funcs.length === 0) {
-    // infer the argument type so it is usable in inference down the line
-    return <T>(arg: T) => arg
-  }
-
-  if (funcs.length === 1) {
-    return funcs[0]
-  }
-
-  return funcs.reduce(
-    (a, b) =>
-      (...args: any) =>
-        a(b(...args))
-  )
-}
-
-function originalComposeWithDevtools() {
-  if (arguments.length === 0) return undefined
-  if (typeof arguments[0] === 'object') return originalReduxCompose
-  return originalReduxCompose.apply(null, arguments as any as Function[])
-}
-
 describe('configureStore', async () => {
-  // RTK's internal `composeWithDevtools` function isn't publicly exported,
-  // so we can't mock it. However, it _does_ try to access the global extension method
-  // attached to `window`. So, if we mock _that_, we'll know if the enhancer ran.
-  const mockDevtoolsCompose = vi
-    .fn()
-    .mockImplementation(originalComposeWithDevtools)
-  ;(window as any).__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ = mockDevtoolsCompose
+  const composeWithDevToolsSpy = vi.spyOn(DevTools, 'composeWithDevTools')
 
   const redux = await import('redux')
 
@@ -76,7 +39,7 @@ describe('configureStore', async () => {
         expect.any(Function)
       )
       expect(redux.applyMiddleware).toHaveBeenCalled()
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
     })
   })
 
@@ -90,7 +53,7 @@ describe('configureStore', async () => {
       expect(configureStore({ reducer })).toBeInstanceOf(Object)
       expect(redux.combineReducers).toHaveBeenCalledWith(reducer)
       expect(redux.applyMiddleware).toHaveBeenCalled()
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         expect.any(Function),
         undefined,
@@ -102,7 +65,7 @@ describe('configureStore', async () => {
   describe('given no reducer', () => {
     it('throws', () => {
       expect(configureStore).toThrow(
-        '"reducer" is a required argument, and must be a function or an object of functions that can be passed to combineReducers'
+        '`reducer` is a required argument, and must be a function or an object of functions that can be passed to combineReducers'
       )
     })
   })
@@ -110,14 +73,23 @@ describe('configureStore', async () => {
   describe('given no middleware', () => {
     it('calls createStore without any middleware', () => {
       expect(
-        configureStore({ middleware: new Tuple(), reducer })
+        configureStore({ middleware: () => new Tuple(), reducer })
       ).toBeInstanceOf(Object)
       expect(redux.applyMiddleware).toHaveBeenCalledWith()
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
         expect.any(Function)
+      )
+    })
+  })
+
+  describe('given an array of middleware', () => {
+    it('throws an error requiring a callback', () => {
+      // @ts-expect-error
+      expect(() => configureStore({ middleware: [], reducer })).toThrow(
+        '`middleware` field must be a callback'
       )
     })
   })
@@ -133,7 +105,7 @@ describe('configureStore', async () => {
         expect.any(Function), // serializableCheck
         expect.any(Function) // actionCreatorCheck
       )
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
@@ -162,23 +134,15 @@ describe('configureStore', async () => {
     })
   })
 
-  describe('given custom middleware that contains non-functions', () => {
-    it('throws an error', () => {
-      expect(() =>
-        configureStore({ middleware: [true] as any, reducer })
-      ).toThrow('each middleware provided to configureStore must be a function')
-    })
-  })
-
   describe('given custom middleware', () => {
     it('calls createStore with custom middleware and without default middleware', () => {
       const thank: Redux.Middleware = (_store) => (next) => (action) =>
         next(action)
       expect(
-        configureStore({ middleware: new Tuple(thank), reducer })
+        configureStore({ middleware: () => new Tuple(thank), reducer })
       ).toBeInstanceOf(Object)
       expect(redux.applyMiddleware).toHaveBeenCalledWith(thank)
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
@@ -233,7 +197,7 @@ describe('configureStore', async () => {
         Object
       )
       expect(redux.applyMiddleware).toHaveBeenCalled()
-      expect(mockDevtoolsCompose).toHaveBeenCalledWith(options) // @remap-prod-remove-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalledWith(options) // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
@@ -246,7 +210,7 @@ describe('configureStore', async () => {
     it('calls createStore with preloadedState', () => {
       expect(configureStore({ reducer })).toBeInstanceOf(Object)
       expect(redux.applyMiddleware).toHaveBeenCalled()
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
@@ -277,7 +241,7 @@ describe('configureStore', async () => {
         })
       ).toBeInstanceOf(Object)
       expect(redux.applyMiddleware).toHaveBeenCalled()
-      expect(mockDevtoolsCompose).toHaveBeenCalled() // @remap-prod-remove-line
+      expect(composeWithDevToolsSpy).toHaveBeenCalled() // @remap-prod-remove-line
       expect(redux.createStore).toHaveBeenCalledWith(
         reducer,
         undefined,
@@ -290,14 +254,14 @@ describe('configureStore', async () => {
     describe('invalid arguments', () => {
       test('enhancers is not a callback', () => {
         expect(() => configureStore({ reducer, enhancers: [] as any })).toThrow(
-          '"enhancers" field must be a callback'
+          '`enhancers` field must be a callback'
         )
       })
 
       test('callback fails to return array', () => {
         expect(() =>
           configureStore({ reducer, enhancers: (() => {}) as any })
-        ).toThrow('"enhancers" callback must return an array')
+        ).toThrow('`enhancers` callback must return an array')
       })
 
       test('array contains non-function', () => {
@@ -330,7 +294,7 @@ describe('configureStore', async () => {
     it("doesn't warn when middleware enhancer is excluded if no middlewares provided", () => {
       const store = configureStore({
         reducer,
-        middleware: new Tuple(),
+        middleware: () => new Tuple(),
         enhancers: () => new Tuple(dummyEnhancer),
       })
 

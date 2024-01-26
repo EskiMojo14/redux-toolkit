@@ -1,14 +1,12 @@
-import { createApi } from '@reduxjs/toolkit/query'
 import type { FetchBaseQueryMeta } from '@reduxjs/toolkit/query'
-import { vi } from 'vitest'
-import { fetchBaseQuery } from '@reduxjs/toolkit/query'
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query'
 import {
-  expectType,
+  DEFAULT_DELAY_MS,
   fakeTimerWaitFor,
   setupApiStore,
-  DEFAULT_DELAY_MS,
-} from './helpers'
-import { QueryActionCreatorResult } from '../core/buildInitiate'
+} from '../../tests/utils/helpers'
+import { expectType } from '../../tests/utils/typeTestHelpers'
+import type { QueryActionCreatorResult } from '../core/buildInitiate'
 
 beforeAll(() => {
   vi.useFakeTimers()
@@ -76,6 +74,7 @@ describe.each([['query'], ['mutation']] as const)(
       expect(onNewCacheEntry).toHaveBeenCalledWith('arg')
       expect(onCleanup).not.toHaveBeenCalled()
 
+      await promise
       if (type === 'mutation') {
         promise.reset()
       } else {
@@ -219,6 +218,7 @@ describe.each([['query'], ['mutation']] as const)(
       )
 
       expect(onNewCacheEntry).toHaveBeenCalledWith('arg')
+      await promise
       if (type === 'mutation') {
         promise.reset()
       } else {
@@ -270,6 +270,7 @@ describe.each([['query'], ['mutation']] as const)(
       )
 
       expect(onNewCacheEntry).toHaveBeenCalledWith('arg')
+      await promise
 
       if (type === 'mutation') {
         promise.reset()
@@ -321,6 +322,7 @@ describe.each([['query'], ['mutation']] as const)(
 
       expect(onNewCacheEntry).toHaveBeenCalledWith('arg')
 
+      await promise
       if (type === 'mutation') {
         promise.reset()
       } else {
@@ -370,6 +372,7 @@ test(`query: getCacheEntry`, async () => {
   const promise = storeRef.store.dispatch(
     extended.endpoints.injected.initiate('arg')
   )
+  await promise
   promise.unsubscribe()
 
   await fakeTimerWaitFor(() => {
@@ -539,6 +542,7 @@ test('updateCachedData', async () => {
   const promise = storeRef.store.dispatch(
     extended.endpoints.injected.initiate('arg')
   )
+  await promise
   promise.unsubscribe()
 
   await fakeTimerWaitFor(() => {
@@ -576,7 +580,7 @@ test('dispatching further actions does not trigger another lifecycle', async () 
   expect(onNewCacheEntry).toHaveBeenCalledTimes(1)
 })
 
-test('dispatching a query initializer with `subscribe: false` does not start a lifecycle', async () => {
+test('dispatching a query initializer with `subscribe: false` does also start a lifecycle', async () => {
   const extended = api.injectEndpoints({
     overrideExisting: true,
     endpoints: (build) => ({
@@ -591,8 +595,9 @@ test('dispatching a query initializer with `subscribe: false` does not start a l
   await storeRef.store.dispatch(
     extended.endpoints.injected.initiate(undefined, { subscribe: false })
   )
-  expect(onNewCacheEntry).toHaveBeenCalledTimes(0)
+  expect(onNewCacheEntry).toHaveBeenCalledTimes(1)
 
+  // will not be called a second time though
   await storeRef.store.dispatch(extended.endpoints.injected.initiate(undefined))
   expect(onNewCacheEntry).toHaveBeenCalledTimes(1)
 })

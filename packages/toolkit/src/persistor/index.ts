@@ -11,8 +11,6 @@ import {
   createSlice,
   nanoid,
   SHOULD_AUTOBATCH,
-  combineSlices,
-  configureStore,
 } from '@reduxjs/toolkit'
 import { promiseTry } from '../utils'
 
@@ -215,8 +213,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       reducer(state, action) {
         let nextState = state
         if (hydrate.match(action) && action.payload.name === name) {
-          const hydrated = action.payload.state
-          nextState = reducer(merge(state, hydrated), action)
+          nextState = reducer(merge(state, action.payload.state), action)
         } else {
           nextState = reducer(state, action)
         }

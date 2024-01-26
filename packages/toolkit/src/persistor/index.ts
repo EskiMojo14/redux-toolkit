@@ -45,16 +45,18 @@ export const localStorage: PersistStorage<string> = {
 }
 /* eslint-enable no-restricted-globals */
 
+export type StateMerger<State, Serialized> = (
+  inboundState: State,
+  originalState: State | undefined,
+  reducedState: State,
+  config: PersistConfig<State, Serialized>
+) => State
+
 interface PersistConfig<State, Serialized> {
   storage: PersistStorage<Serialized>
   serialize?: ((state: State) => Serialized) | false
   deserialize?: ((serialized: Serialized) => State) | false
-  merge?: (
-    inboundState: State,
-    state: State | undefined,
-    reducedState: State,
-    config: PersistConfig<State, Serialized>
-  ) => State
+  merge?: StateMerger<State, Serialized>
 }
 
 interface PersistRegistryEntry {
@@ -118,7 +120,7 @@ export const shallowMerge = <State>(
   return newState
 }
 
-export const twoLevelMerge = <State extends Record<string, unknown>>(
+export const twoLevelMerge = <State>(
   inbound: State,
   original: State | undefined,
   reduced: State
@@ -267,3 +269,19 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     enhancer,
   }
 }
+
+const persistor = createPersistor()
+
+const counterSlice = persistor.persistSlice(
+  createSlice({
+    name: 'counter',
+    initialState: 0,
+    reducers: {
+      increment: (state) => state + 1,
+    },
+  }),
+  {
+    storage: localStorage,
+    merge: twoLevelMerge,
+  }
+)

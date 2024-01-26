@@ -55,7 +55,7 @@ interface PersistRegistryEntry {
 }
 
 interface PersistDispatch<ReducerPath extends string> {
-  (action: Action<`${ReducerPath}/hydrate`>): Promise<void>
+  (action: Action<`${ReducerPath}/startHydrate`>): Promise<void>
 }
 
 async function getStoredState(name: string, entry: PersistRegistryEntry) {
@@ -116,6 +116,13 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
           state.hydrated = true
         },
       },
+      startHydrate: {
+        prepare: () => ({
+          payload: undefined,
+          meta: { [SHOULD_AUTOBATCH]: true },
+        }),
+        reducer() {},
+      },
       reset: () => initialState,
     },
     selectors: {
@@ -124,7 +131,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     },
   })
 
-  const { middlewareRegistered, hydrate, reset } = slice.actions
+  const { middlewareRegistered, hydrate, startHydrate, reset } = slice.actions
 
   const { selectHydrated, selectRegistered } = slice.selectors
 
@@ -185,7 +192,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       const createStore = applyMiddleware(middleware)(next)
       const store = createStore(reducer, preloadedState)
 
-      store.dispatch(hydrate(reducerPath, undefined))
+      store.dispatch(startHydrate())
 
       return store
     }

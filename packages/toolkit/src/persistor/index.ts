@@ -10,8 +10,9 @@ import {
   applyMiddleware,
   createSlice,
   nanoid,
+  SHOULD_AUTOBATCH,
 } from '@reduxjs/toolkit'
-import { promiseFromEntries, promiseTry } from '../utils'
+import { promiseTry } from '../utils'
 
 interface PersistState {
   hydrated: boolean
@@ -90,12 +91,19 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
             ? 'conflict'
             : true
       },
-      hydrate: (
-        state,
-        action: PayloadAction<Record<string, any> | undefined>
-      ) => {
-        state.hydrated = true
+      hydrate: {
+        prepare: (reducerPath: string, state: any) => ({
+          payload: { reducerPath, state },
+          meta: { [SHOULD_AUTOBATCH]: true },
+        }),
+        reducer(
+          state,
+          action: PayloadAction<{ reducerPath: string; state: any }>
+        ) {
+          state.hydrated = true
+        },
       },
+      init() {},
       reset: () => initialState,
     },
     selectors: {
@@ -104,7 +112,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     },
   })
 
-  const { middlewareRegistered, hydrate, reset } = slice.actions
+  const { middlewareRegistered, hydrate, reset, init } = slice.actions
 
   const { selectHydrated, selectRegistered } = slice.selectors
 
@@ -122,11 +130,18 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
         if (reset.match(action)) {
           dispatch(middlewareRegistered(persistUid))
         } else if (hydrate.match(action)) {
-          return promiseFromEntries(
-            Object.entries(internalRegistry).map(([reducerPath, entry]) => {
-              return [reducerPath, getStoredState(reducerPath, entry)]
-            })
-          ).then((payload) => next(hydrate(payload)))
+          return Promise.all(
+            Object.entries(internalRegistry).map(
+              async ([reducerPath, entry]) => {
+                try {
+                  const state = await getStoredState(reducerPath, entry)
+                  dispatch(hydrate(reducerPath, state))
+                } catch {
+                  // eslint-disable-next-line no-empty
+                }
+              }
+            )
+          )
         } else if (
           typeof process !== 'undefined' &&
           process.env.NODE_ENV === 'development'
@@ -150,7 +165,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       const createStore = applyMiddleware(middleware)(next)
       const store = createStore(reducer, preloadedState)
 
-      store.dispatch(hydrate())
+      store.dispatch(hydrate(reducerPath, undefined))
 
       return store
     }
@@ -168,8 +183,8 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     internalRegistry[reducerPath] = { config }
 
     return (state, action) => {
-      if (hydrate.match(action)) {
-        const possibleState = action.payload && action.payload[reducerPath]
+      if (hydrate.match(action) && action.payload.reducerPath === reducerPath) {
+        const possibleState = action.payload.state
         return reducer(possibleState || state, action)
       }
       return reducer(state, action)

@@ -65,9 +65,26 @@ async function getStoredState(name: string, entry: PersistRegistryEntry) {
     deserialize = JSON.parse
   }
 
-  const stored = storage.getItem(name)
+  const stored = await storage.getItem(name)
 
   return deserialize === false ? stored : deserialize(stored)
+}
+
+async function storeState(
+  name: string,
+  state: any,
+  entry: PersistRegistryEntry
+) {
+  let {
+    config: { storage, serialize },
+  } = entry
+  if (typeof serialize === 'undefined') {
+    serialize = JSON.stringify
+  }
+
+  const serialized = serialize === false ? state : serialize(state)
+
+  return storage.setItem(name, serialized)
 }
 
 export const createPersistor = <ReducerPath extends string = 'persistor'>({
@@ -175,11 +192,15 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     internalRegistry[name] = { config }
 
     return (state, action) => {
+      let nextState = state
       if (hydrate.match(action) && action.payload.name === name) {
         const possibleState = action.payload.state
-        return reducer(possibleState || state, action)
+        nextState = reducer(possibleState || state, action)
+      } else {
+        nextState = reducer(state, action)
       }
-      return reducer(state, action)
+      storeState(name, nextState, internalRegistry[name])
+      return nextState
     }
   }
 

@@ -104,7 +104,7 @@ export const shallowMerge = <State>(
   original: State | undefined,
   reduced: State
 ): State => {
-  if (!isPlainObject(reduced)) return reduced
+  if (!isPlainObject(reduced)) return inbound
   const newState: State = { ...reduced }
   if (isPlainObject(inbound)) {
     const keys = Object.keys(inbound) as (keyof State)[]
@@ -125,7 +125,7 @@ export const twoLevelMerge = <State>(
   original: State | undefined,
   reduced: State
 ) => {
-  if (!isPlainObject(reduced)) return reduced
+  if (!isPlainObject(reduced)) return inbound
   const newState: State = { ...reduced }
   if (isPlainObject(inbound)) {
     const keys = Object.keys(inbound) as (keyof State)[]

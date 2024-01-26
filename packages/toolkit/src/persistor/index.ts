@@ -248,7 +248,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     { reducer, name }: { name: string; reducer: Reducer<S, A> },
     config: PersistConfig<S, SS>
   ): Reducer<S, A> => {
-    const { merge = hardMerge } = config
+    const { merge = shallowMerge } = config
     internalRegistry[name] = { config }
 
     return function wrapped(state, action) {

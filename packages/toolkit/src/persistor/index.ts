@@ -95,6 +95,50 @@ async function storeState(
   return storage.setItem(name, serialized)
 }
 
+export const hardMerge = <State>(inbound: State): State => inbound
+
+export const shallowMerge = <State>(
+  inbound: State,
+  original: State | undefined,
+  reduced: State
+): State => {
+  if (!isPlainObject(reduced)) return reduced
+  const newState: State = { ...reduced }
+  if (isPlainObject(inbound)) {
+    const keys = Object.keys(inbound) as (keyof State)[]
+    for (const key of keys) {
+      if (original?.[key] !== reduced[key]) {
+        // reducer has already modified the value, don't overwrite it
+        continue
+      }
+      // otherwise take the inbound value
+      newState[key] = inbound[key]
+    }
+  }
+  return newState
+}
+
+export const twoLevelMerge = <State extends Record<string, unknown>>(
+  inbound: State,
+  original: State | undefined,
+  reduced: State
+) => {
+  if (!isPlainObject(reduced)) return reduced
+  const newState: State = { ...reduced }
+  if (isPlainObject(inbound)) {
+    const keys = Object.keys(inbound) as (keyof State)[]
+    for (const key of keys) {
+      if (original?.[key] !== reduced[key]) {
+        // reducer has already modified the value, don't overwrite it
+        continue
+      }
+      // otherwise shallow merge the inbound value
+      newState[key] = shallowMerge(inbound[key], original?.[key], reduced[key])
+    }
+  }
+  return newState
+}
+
 export const createPersistor = <ReducerPath extends string = 'persistor'>({
   reducerPath = 'persistor' as ReducerPath,
   onError,
@@ -210,7 +254,7 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
       SS
     >
   ): Slice => {
-    const { merge = (inbound) => inbound } = config
+    const { merge = hardMerge } = config
     internalRegistry[name] = { config }
 
     return {
@@ -232,48 +276,4 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
     persistSlice,
     enhancer,
   }
-}
-
-export const hardMerge = <State>(inbound: State): State => inbound
-
-export const shallowMerge = <State>(
-  inbound: State,
-  original: State | undefined,
-  reduced: State
-): State => {
-  if (!isPlainObject(reduced)) return reduced
-  const newState: State = { ...reduced }
-  if (isPlainObject(inbound)) {
-    const keys = Object.keys(inbound) as (keyof State)[]
-    for (const key of keys) {
-      if (original?.[key] !== reduced[key]) {
-        // reducer has already modified the value, don't overwrite it
-        continue
-      }
-      // otherwise take the inbound value
-      newState[key] = inbound[key]
-    }
-  }
-  return newState
-}
-
-export const twoLevelMerge = <State extends Record<string, unknown>>(
-  inbound: State,
-  original: State | undefined,
-  reduced: State
-) => {
-  if (!isPlainObject(reduced)) return reduced
-  const newState: State = { ...reduced }
-  if (isPlainObject(inbound)) {
-    const keys = Object.keys(inbound) as (keyof State)[]
-    for (const key of keys) {
-      if (original?.[key] !== reduced[key]) {
-        // reducer has already modified the value, don't overwrite it
-        continue
-      }
-      // otherwise shallow merge the inbound value
-      newState[key] = shallowMerge(inbound[key], original?.[key], reduced[key])
-    }
-  }
-  return newState
 }

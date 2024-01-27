@@ -1,5 +1,6 @@
 import nodeFetch, { Headers, Request } from 'node-fetch'
 import { server } from './src/query/tests/mocks/server'
+import './src/tests/utils/helpers'
 
 vi.stubGlobal('fetch', nodeFetch)
 vi.stubGlobal('Request', Request)

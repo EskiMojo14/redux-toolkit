@@ -25,7 +25,7 @@ interface PersistorOptions<ReducerPath extends string = 'persistor'> {
   onError?: (error: unknown) => void
 }
 
-interface PersistStorage<Serialized> {
+export interface PersistStorage<Serialized> {
   getItem(key: string): Promise<Serialized | null>
   setItem(key: string, value: Serialized): Promise<void>
   removeItem(key: string): Promise<void>
@@ -265,23 +265,8 @@ export const createPersistor = <ReducerPath extends string = 'persistor'>({
   return {
     reducerPath,
     reducer: slice.reducer,
+    hydrate,
     persistSlice,
     enhancer,
   }
 }
-
-const persistor = createPersistor()
-
-const counterSlice = persistor.persistSlice(
-  createSlice({
-    name: 'counter',
-    initialState: 0,
-    reducers: {
-      increment: (state) => state + 1,
-    },
-  }),
-  {
-    storage: localStorage,
-    merge: twoLevelMerge,
-  }
-)
